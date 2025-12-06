@@ -1,4 +1,4 @@
-# BigDataFlink
+# BigDataFlink Сипкин Владислав М8О-214СВ-24
 Анализ больших данных - лабораторная работа №3 - Streaming processing с помощью Flink
 
 Одним из самых популярных фреймворков для работы со streaming processing является Apache Flink. Apache Flink - мощный фреймворк, который предлагает широкий набор функциональности для простого написания streaming processing.

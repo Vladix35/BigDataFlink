@@ -1,0 +1,122 @@
+services:
+  postgres:
+    image: postgres:latest
+    container_name: doc_postgres
+    environment:
+      POSTGRES_DB: postgres
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: mypassword
+    ports: 
+      - "5433:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql
+      - ./star_tables.sql:/docker-entrypoint-initdb.d/star_tables.sql
+    networks:
+      - bd-network
+
+  zookeeper:
+    image: confluentinc/cp-zookeeper:7.3.2
+    container_name: zookeeper
+    ports:
+      - "2181:2181"
+    environment:
+      ZOOKEEPER_CLIENT_PORT: 2181
+      ZOOKEEPER_SERVER_ID: 1
+      ZOOKEEPER_SERVERS: zookeeper:2888:3888
+    networks:
+      - bd-network
+
+  kafka:
+    image: confluentinc/cp-kafka:7.3.2
+    container_name: kafka
+    hostname: kafka
+    ports:
+      - "9092:9092"
+      - "29092:29092"
+    environment:
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:9092,PLAINTEXT_HOST://localhost:29092
+      KAFKA_LISTENERS: PLAINTEXT://0.0.0.0:9092,PLAINTEXT_HOST://0.0.0.0:29092
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT,PLAINTEXT_HOST:PLAINTEXT
+      KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT
+      KAFKA_ZOOKEEPER_CONNECT: "zookeeper:2181"
+      KAFKA_BROKER_ID: 1
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+    depends_on:
+      - zookeeper
+    networks:
+      - bd-network
+    
+  kafka-ui:
+    image: provectuslabs/kafka-ui
+    container_name: kafka-ui
+    ports:
+      - "8080:8080"
+    environment:
+      KAFKA_CLUSTERS_0_NAME: local-kafka
+      KAFKA_CLUSTERS_0_BOOTSTRAPSERVERS: kafka:9092
+    depends_on:
+      - kafka
+    networks:
+      - bd-network
+  
+  producer:
+    build: ./producer
+    container_name: producer
+    environment:
+      KAFKA_BOOTSTRAP_SERVERS: kafka:9092
+      KAFKA_TOPIC: mock_data
+    depends_on:
+      - kafka
+      - zookeeper
+    networks:
+      - bd-network
+  
+  jobmanager:
+    build: ./
+    container_name: jobmanager
+    ports:
+      - "8081:8081"
+    environment:
+      - JOB_MANAGER_RPC_ADDRESS=jobmanager
+      - KAFKA_BOOTSTRAP=kafka:9092
+      - KAFKA_TOPIC=mock_data
+      - POSTGRES_USER=postgres
+      - POSTGRES_PASSWORD=mypassword
+    command: jobmanager
+    volumes:
+      - ./flink_job.py:/opt/flink/flink_job.py
+      - ./lib/flink-sql-connector-kafka-1.17.2.jar:/opt/flink/lib/flink-sql-connector-kafka-1.17.2.jar
+      - ./lib/flink-connector-jdbc-3.1.1-1.17.jar:/opt/flink/lib/flink-connector-jdbc-3.1.1-1.17.jar
+      - ./lib/postgresql-42.6.0.jar:/opt/flink/lib/postgresql-42.6.0.jar
+      - ./star_tables.sql:/opt/flink/star_tables.sql
+    networks:
+      - bd-network
+    depends_on:
+      - kafka
+      - postgres
+
+  taskmanager:
+    build: ./
+    container_name: taskmanager
+    depends_on:
+      - jobmanager
+    environment:
+      - TASK_MANAGER_NUMBER_OF_TASK_SLOTS=8
+      - TASK_MANAGER_MEMORY_PROCESS_SIZE=256m
+      - JOB_MANAGER_RPC_ADDRESS=jobmanager
+    command: taskmanager
+    volumes:
+      - ./flink_job.py:/opt/flink/flink_job.py
+      - ./lib/flink-sql-connector-kafka-1.17.2.jar:/opt/flink/lib/flink-sql-connector-kafka-1.17.2.jar
+      - ./lib/flink-connector-jdbc-3.1.1-1.17.jar:/opt/flink/lib/flink-connector-jdbc-3.1.1-1.17.jar
+      - ./lib/postgresql-42.6.0.jar:/opt/flink/lib/postgresql-42.6.0.jar
+      - ./star_tables.sql:/opt/flink/star_tables.sql
+    networks:
+      - bd-network
+
+volumes:
+  postgres_data:
+
+networks:
+  bd-network:
+    driver: bridge
